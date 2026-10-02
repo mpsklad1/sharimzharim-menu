@@ -12,7 +12,8 @@ const safe = value => String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;",
 const $ = selector => document.querySelector(selector);
 
 const categoryList = $("#category-list");
-const productGrid = $("#product-grid");
+const menuSections = $("#menu-sections");
+const appHeader = $(".app-header");
 const search = $("#menu-search");
 const productDialog = $("#product-dialog");
 const cartDialog = $("#cart-dialog");
@@ -61,18 +62,21 @@ function renderCategories() {
   ).join("");
 }
 
-function visibleProducts() {
-  const query = search.value.trim().toLocaleLowerCase("ru-RU");
-  if (query) return products.filter(product =>
-    `${product.name} ${product.description}`.toLocaleLowerCase("ru-RU").includes(query));
-  if (category === "Хиты") return products.filter(product => popularIds.has(product.id));
-  return products.filter(product => product.category === category);
+function setActiveCategory(name) {
+  if (category === name) return;
+  category = name;
+  categoryList.querySelectorAll("[data-category]").forEach(button => {
+    button.setAttribute("aria-current", String(button.dataset.category === name));
+  });
+  const current = categoryList.querySelector('[aria-current="true"]');
+  if (current) categoryList.scrollTo({
+    left: current.offsetLeft - categoryList.offsetLeft - (categoryList.clientWidth - current.clientWidth) / 2,
+    behavior: "smooth"
+  });
 }
 
-function renderProducts() {
-  const filtered = visibleProducts();
-  $("#section-title").textContent = search.value.trim() ? "Результаты поиска" : category;
-  productGrid.innerHTML = filtered.length ? filtered.map(product => `
+function renderProductCards(items) {
+  return items.map(product => `
     <article class="product-card">
       <button type="button" class="product-photo-button" data-open="${product.id}" aria-label="Открыть ${safe(product.name)}">
         <span class="product-photo" ${photoStyle(product.image)}></span>
@@ -83,7 +87,41 @@ function renderProducts() {
         <span class="product-price">${product.id === 30 ? "от " + currency(690) : currency(product.price)}</span>
         <button type="button" class="product-add" data-open="${product.id}" aria-label="Настроить ${safe(product.name)}"><span class="icon icon-plus" aria-hidden="true"></span></button>
       </div>
-    </article>`).join("") : `<p class="empty-search">По вашему запросу ничего не найдено</p>`;
+    </article>`).join("");
+}
+
+function renderProducts() {
+  const query = search.value.trim().toLocaleLowerCase("ru-RU");
+  if (query) {
+    const matches = products.filter(product =>
+      `${product.name} ${product.description}`.toLocaleLowerCase("ru-RU").includes(query));
+    menuSections.innerHTML = `<section class="menu-section" aria-labelledby="search-results-title">
+      <h1 id="search-results-title">Результаты поиска</h1>
+      <div class="product-grid">${matches.length ? renderProductCards(matches) : '<p class="empty-search">По вашему запросу ничего не найдено</p>'}</div>
+    </section>`;
+    return;
+  }
+  menuSections.innerHTML = categories.map((name, index) => {
+    const items = name === "Хиты"
+      ? products.filter(product => popularIds.has(product.id))
+      : products.filter(product => product.category === name);
+    return `<section class="menu-section" id="menu-section-${index}" aria-labelledby="menu-heading-${index}">
+      <h1 id="menu-heading-${index}">${safe(name)}</h1>
+      <div class="product-grid">${renderProductCards(items)}</div>
+    </section>`;
+  }).join("");
+}
+
+function syncActiveCategory() {
+  if (search.value.trim()) return;
+  const sections = menuSections.querySelectorAll(".menu-section");
+  const threshold = appHeader.getBoundingClientRect().bottom + 16;
+  let activeIndex = 0;
+  sections.forEach((section, index) => {
+    if (section.getBoundingClientRect().top <= threshold) activeIndex = index;
+  });
+  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) activeIndex = sections.length - 1;
+  setActiveCategory(categories[activeIndex]);
 }
 
 function optionPrice(option) { return option[2] ? `+${currency(option[2])}` : "Бесплатно"; }
@@ -132,7 +170,7 @@ function openProduct(id) {
           <p class="portion-price" id="portion-price">Целая · ${currency(product.price)}</p>` : ""}
         ${product.id === 34 ? `
           <div class="section-heading"><h2>Размер</h2></div>
-          <div class="portion-control" role="group" aria-label="Размер шаурмы">
+          <div class="portion-control" role="group" aria-label="Размер шавермы">
             <button type="button" data-action="size" data-xl="false" aria-pressed="true">Стандарт · 350 г</button>
             <button type="button" data-action="size" data-xl="true" aria-pressed="false">XL · 500 г</button>
           </div>
@@ -260,16 +298,33 @@ function checkout() {
 categoryList.addEventListener("click", event => {
   const button = event.target.closest("[data-category]");
   if (!button) return;
-  category = button.dataset.category;
-  search.value = "";
-  renderCategories();
+  if (search.value) {
+    search.value = "";
+    renderProducts();
+  }
+  setActiveCategory(button.dataset.category);
+  const section = $("#menu-section-" + categories.indexOf(button.dataset.category));
+  window.scrollTo({
+    top: window.scrollY + section.getBoundingClientRect().top - appHeader.offsetHeight - 12,
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
+  });
+});
+search.addEventListener("input", () => {
   renderProducts();
-  const current = categoryList.querySelector('[aria-current="true"]');
-  categoryList.scrollLeft = current.offsetLeft - categoryList.offsetLeft - 18;
+  if (search.value.trim()) setActiveCategory(null);
+  else syncActiveCategory();
   window.scrollTo({ top: 0, behavior: "auto" });
 });
-search.addEventListener("input", renderProducts);
-productGrid.addEventListener("click", event => {
+let scrollPending = false;
+window.addEventListener("scroll", () => {
+  if (scrollPending) return;
+  scrollPending = true;
+  requestAnimationFrame(() => {
+    syncActiveCategory();
+    scrollPending = false;
+  });
+}, { passive: true });
+menuSections.addEventListener("click", event => {
   const button = event.target.closest("[data-open]");
   if (button) openProduct(Number(button.dataset.open));
 });
@@ -331,3 +386,4 @@ for (const dialog of [productDialog, cartDialog]) {
 renderCategories();
 renderProducts();
 renderCartButton();
+syncActiveCategory();
