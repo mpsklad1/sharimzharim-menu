@@ -6,6 +6,11 @@
   <meta name="theme-color" content="#ffffff">
   <meta name="description" content="Меню #ШаримЖарим: бургеры, шаверма, курица гриль и закуски.">
   <title>#ШаримЖарим · Меню</title>
+  <script>
+    if (location.protocol === "http:" && /^(www\.)?sharimzharim\.pro$/.test(location.hostname)) {
+      location.replace(`https://mpsklad1.github.io/sharimzharim-menu-preview/${location.search}${location.hash}`);
+    }
+  </script>
   <link rel="icon" type="image/png" href="./assets/icon.png">
   <link rel="stylesheet" href="./style.css?v=20261002-reviews-visible">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
