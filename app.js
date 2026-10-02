@@ -1,4 +1,4 @@
-import { categories, popularIds, products, burgerOptions, optionsFor, imageFor } from "./menu-data.js";
+import { categories, popularIds, products, optionGroupsFor, optionsFor, imageFor } from "./menu-data.js";
 
 const telegram = window.Telegram?.WebApp;
 telegram?.ready();
@@ -22,6 +22,7 @@ let selectedProduct = null;
 let selectedOptions = new Set();
 let quantity = 1;
 let halfPortion = false;
+let xlPortion = false;
 let toastTimer;
 
 function loadCart() {
@@ -33,6 +34,7 @@ function loadCart() {
         itemId: line.itemId,
         count: Math.min(line.count, 99),
         half: line.itemId === 30 && line.half === true,
+        xl: line.itemId === 34 && line.xl === true,
         optionIds: Array.isArray(line.optionIds)
           ? line.optionIds.filter(id => optionsFor(byId.get(line.itemId)).some(option => option[0] === id)) : []
       }));
@@ -85,7 +87,20 @@ function renderProducts() {
 }
 
 function optionPrice(option) { return option[2] ? `+${currency(option[2])}` : "Бесплатно"; }
-function basePrice() { return halfPortion && selectedProduct.id === 30 ? 690 : selectedProduct.price; }
+function unitBasePrice(product, half = false, xl = false) {
+  if (product.id === 30 && half) return 690;
+  if (product.id === 34 && xl) return product.price + 180;
+  return product.price;
+}
+function portionWeight(product, half = false, xl = false) {
+  if (product.id === 30 && half) return "1/2 шт.";
+  if (product.id === 34 && xl) return "500 г";
+  return product.weight;
+}
+function portionSuffix(line) {
+  return line.half ? " · половина" : line.xl ? " · XL" : "";
+}
+function basePrice() { return unitBasePrice(selectedProduct, halfPortion, xlPortion); }
 function selectedPrice() {
   return basePrice() + optionsFor(selectedProduct).filter(option => selectedOptions.has(option[0]))
     .reduce((sum, option) => sum + option[2], 0);
@@ -98,8 +113,8 @@ function openProduct(id) {
   selectedOptions = new Set();
   quantity = 1;
   halfPortion = false;
-  const isBurger = product.category === "На булке" || product.category === "В листьях";
-  const options = optionsFor(product);
+  xlPortion = false;
+  const groups = optionGroupsFor(product);
   productDialog.innerHTML = `
     <div class="sheet-layout">
       <div class="sheet-header"><strong>Состав блюда</strong><button type="button" class="icon-button" data-action="close" aria-label="Закрыть"><span class="icon icon-x" aria-hidden="true"></span></button></div>
@@ -115,12 +130,20 @@ function openProduct(id) {
             <button type="button" data-action="portion" data-half="true" aria-pressed="false">Половина</button>
           </div>
           <p class="portion-price" id="portion-price">Целая · ${currency(product.price)}</p>` : ""}
-        <div class="section-heading"><h2>${isBurger ? "Добавить в бургер" : "Добавить соус"}</h2><span>Выберите до ${isBurger ? 99 : 6}</span></div>
-        <div class="option-list">${options.map(option => `
-          <button type="button" class="option-row" data-action="option" data-option="${option[0]}" aria-pressed="false">
-            <span><span class="option-name">${safe(option[1])}</span><span class="option-price">${optionPrice(option)}</span></span>
-            <span class="option-check"><span class="icon icon-check" aria-hidden="true"></span></span>
-          </button>`).join("")}</div>
+        ${product.id === 34 ? `
+          <div class="section-heading"><h2>Размер</h2></div>
+          <div class="portion-control" role="group" aria-label="Размер шаурмы">
+            <button type="button" data-action="size" data-xl="false" aria-pressed="true">Стандарт · 350 г</button>
+            <button type="button" data-action="size" data-xl="true" aria-pressed="false">XL · 500 г</button>
+          </div>
+          <p class="portion-price" id="size-price">Стандарт · ${currency(product.price)}</p>` : ""}
+        ${groups.map(group => `
+          <div class="section-heading"><h2>${safe(group.title)}</h2><span>Выберите до ${group.limit}</span></div>
+          <div class="option-list">${group.options.map(option => `
+            <button type="button" class="option-row" data-action="option" data-option="${option[0]}" aria-pressed="false">
+              <span><span class="option-name">${safe(option[1])}</span><span class="option-price">${optionPrice(option)}</span></span>
+              <span class="option-check"><span class="icon icon-check" aria-hidden="true"></span></span>
+            </button>`).join("")}</div>`).join("")}
       </div>
       <div class="sheet-footer">
         <div class="quantity-stepper" aria-label="Количество">
@@ -146,6 +169,13 @@ function updateProductTotal() {
       button.setAttribute("aria-pressed", String((button.dataset.half === "true") === halfPortion));
     });
   }
+  if (selectedProduct.id === 34) {
+    $("#detail-weight").textContent = portionWeight(selectedProduct, false, xlPortion);
+    $("#size-price").textContent = `${xlPortion ? "XL" : "Стандарт"} · ${currency(basePrice())}`;
+    productDialog.querySelectorAll('[data-action="size"]').forEach(button => {
+      button.setAttribute("aria-pressed", String((button.dataset.xl === "true") === xlPortion));
+    });
+  }
 }
 
 function lineOptions(line) {
@@ -153,7 +183,7 @@ function lineOptions(line) {
 }
 function linePrice(line) {
   const product = byId.get(line.itemId);
-  return (line.half ? 690 : product.price) + lineOptions(line).reduce((sum, option) => sum + option[2], 0);
+  return unitBasePrice(product, line.half, line.xl) + lineOptions(line).reduce((sum, option) => sum + option[2], 0);
 }
 function cartCount() { return cart.reduce((sum, line) => sum + line.count, 0); }
 function cartTotal() { return cart.reduce((sum, line) => sum + linePrice(line) * line.count, 0); }
@@ -169,10 +199,10 @@ function renderCartButton() {
 
 function addToCart() {
   const optionIds = [...selectedOptions].sort((a, b) => a - b);
-  const existing = cart.find(line => line.itemId === selectedProduct.id && line.half === halfPortion &&
+  const existing = cart.find(line => line.itemId === selectedProduct.id && line.half === halfPortion && line.xl === xlPortion &&
     JSON.stringify(line.optionIds) === JSON.stringify(optionIds));
   if (existing) existing.count = Math.min(99, existing.count + quantity);
-  else cart.push({ itemId: selectedProduct.id, optionIds, half: halfPortion, count: quantity });
+  else cart.push({ itemId: selectedProduct.id, optionIds, half: halfPortion, xl: xlPortion, count: quantity });
   saveCart();
   productDialog.close();
   telegram?.HapticFeedback?.impactOccurred?.("light");
@@ -199,7 +229,7 @@ function renderCart() {
           return `<div class="cart-line">
             <div class="cart-line-top">
               <div class="cart-line-photo" role="img" aria-label="${safe(product.name)}" ${photoStyle(product.image)}></div>
-              <div class="cart-line-copy"><p class="cart-line-name">${safe(product.name)}${line.half ? " · половина" : ""}</p><p class="cart-line-meta">${line.half ? "1/2 шт." : safe(product.weight)} · ${currency(linePrice(line))}/шт.</p>${options.length ? `<p class="cart-line-options">${options.map(option => `+ ${safe(option[1])}`).join(" · ")}</p>` : ""}</div>
+              <div class="cart-line-copy"><p class="cart-line-name">${safe(product.name)}${portionSuffix(line)}</p><p class="cart-line-meta">${safe(portionWeight(product, line.half, line.xl))} · ${currency(linePrice(line))}/шт.</p>${options.length ? `<p class="cart-line-options">${options.map(option => `${option[2] ? "+ " : ""}${safe(option[1])}`).join(" · ")}</p>` : ""}</div>
               <span class="cart-line-total">${currency(linePrice(line) * line.count)}</span>
             </div>
             <div class="cart-line-actions"><button type="button" data-action="line-decrease" data-index="${index}" aria-label="Уменьшить количество ${safe(product.name)}"><span class="icon icon-minus" aria-hidden="true"></span></button><strong>${line.count}</strong><button type="button" data-action="line-increase" data-index="${index}" aria-label="Увеличить количество ${safe(product.name)}"><span class="icon icon-plus" aria-hidden="true"></span></button></div>
@@ -252,10 +282,13 @@ productDialog.addEventListener("click", event => {
   switch (button.dataset.action) {
     case "close": productDialog.close(); break;
     case "portion": halfPortion = button.dataset.half === "true"; updateProductTotal(); break;
+    case "size": xlPortion = button.dataset.xl === "true"; updateProductTotal(); break;
     case "option": {
       const id = Number(button.dataset.option);
+      const group = optionGroupsFor(selectedProduct).find(group => group.options.some(option => option[0] === id));
+      if (!group) break;
       if (selectedOptions.has(id)) selectedOptions.delete(id);
-      else if (selectedOptions.size < (burgerOptions === optionsFor(selectedProduct) ? 99 : 6)) selectedOptions.add(id);
+      else if (group.options.filter(option => selectedOptions.has(option[0])).length < group.limit) selectedOptions.add(id);
       button.setAttribute("aria-pressed", String(selectedOptions.has(id)));
       updateProductTotal();
       break;

@@ -1,5 +1,5 @@
-export const categories = ["Хиты", "На булке", "В листьях", "Курица", "Фритюр", "Закуски"];
-export const popularIds = new Set([1, 2, 3, 5, 12, 26, 29, 30]);
+export const categories = ["Хиты", "На булке", "Шаурма", "В листьях", "Курица", "Фритюр", "Закуски"];
+export const popularIds = new Set([1, 2, 3, 5, 12, 26, 29, 30, 34]);
 
 const item = (id, name, description, weight, price, image, category) =>
   ({ id, name, description, weight, price, image, category });
@@ -38,7 +38,12 @@ export const products = [
   item(30, "Курица гриль", "Курица гриль с румяной кожицей. Выберите целую или половину.", "1 шт.", 1190, 32, "Курица"),
   item(31, "Крылья гриль запечённые", "Куриные крылья, запечённые до румяной корочки.", "7 шт.", 690, 33, "Курица"),
   item(32, "Крылья баффало", "Куриные крылья в пикантном соусе баффало.", "7 шт.", 730, 34, "Курица"),
-  item(33, "Стрипсы", "Куриные полоски в хрустящей панировке.", "5 шт.", 490, 35, "Фритюр")
+  item(33, "Стрипсы", "Куриные полоски в хрустящей панировке.", "5 шт.", 490, 35, "Фритюр"),
+
+  item(34, "Классика на жаре", "Курица гриль, томат, огурец, хрустящая капуста и салат, чесночный соус в поджаренном лаваше. Доступен размер XL.", "350 г", 490, "shawarma-classic", "Шаурма"),
+  item(35, "Сырная на жаре", "Курица гриль, расплавленный сыр, томат, огурец, капуста и сливочный соус в поджаренном лаваше.", "380 г", 550, "shawarma-cheese", "Шаурма"),
+  item(36, "Баффало", "Курица гриль в соусе баффало, маринованный огурец, красный лук, капуста и салат в поджаренном лаваше.", "380 г", 570, "shawarma-buffalo", "Шаурма"),
+  item(37, "Стрипс-ролл", "Хрустящие куриные стрипсы, томат, капуста, салат и чесночный соус в поджаренном лаваше.", "350 г", 550, "shawarma-strips", "Шаурма")
 ];
 
 export const burgerOptions = [
@@ -56,12 +61,41 @@ export const sauceOptions = [
   [104, "Соус чили", 130], [105, "Горчица", 130], [106, "Соус шрирача", 130]
 ];
 
+const shawarmaOptions = [
+  [201, "Сыр", 70], [202, "Халапеньо", 60], [203, "Грибы", 70],
+  [204, "Дополнительная курица гриль", 140], [205, "Соус отдельно", 70]
+];
+const stripOptions = shawarmaOptions.map(option => option[0] === 204
+  ? [204, "Дополнительный стрипс", 140] : option);
+const classicExclusions = [
+  [211, "Без томата", 0], [212, "Без огурца", 0],
+  [213, "Без капусты", 0], [214, "Без соуса", 0]
+];
+const buffaloExclusions = [
+  [212, "Без маринованного огурца", 0], [213, "Без капусты", 0],
+  [214, "Без соуса баффало", 0], [215, "Без лука", 0]
+];
+const stripsExclusions = [
+  [211, "Без томата", 0], [213, "Без капусты", 0], [214, "Без соуса", 0]
+];
+
+export function optionGroupsFor(product) {
+  if (product.category === "На булке" || product.category === "В листьях")
+    return [{ title: "Добавить в бургер", limit: burgerOptions.length, options: burgerOptions }];
+  if (product.category === "Шаурма")
+    return [
+      { title: "Добавки", limit: 3, options: product.id === 37 ? stripOptions : shawarmaOptions },
+      { title: "Убрать из состава", limit: 4, options: product.id === 36 ? buffaloExclusions : product.id === 37 ? stripsExclusions : classicExclusions }
+    ];
+  return [{ title: "Добавить соус", limit: sauceOptions.length, options: sauceOptions }];
+}
+
 export function optionsFor(product) {
-  return product.category === "На булке" || product.category === "В листьях"
-    ? burgerOptions : sauceOptions;
+  return optionGroupsFor(product).flatMap(group => group.options);
 }
 
 export function imageFor(index) {
+  if (typeof index === "string") return [index, 1, 1, 0];
   if (index < 12) return ["burger-grid", 4, 3, index];
   if (index < 24) return ["lettuce-grid", 4, 3, index - 12];
   if (index < 28) return ["extra-grid", 2, 2, index - 24];
