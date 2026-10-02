@@ -412,7 +412,7 @@ async function checkout() {
         variant: line.half ? "half" : line.xl ? "xl" : null
       }));
       clearTimeout(cartSaveTimer);
-      await cartRequest;
+      await cartRequest.catch(()=>{});
       checkoutRequestId ||= crypto.randomUUID();
       try {localStorage.setItem("sharimzharim-checkout-id",checkoutRequestId);}catch{}
       const order = await account.saveDemoOrder(items, checkoutRequestId);
